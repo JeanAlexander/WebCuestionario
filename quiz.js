@@ -61,6 +61,20 @@ const KEY_ACTION = {
   shift: "TURBO / ACELERAR", space: "DESPEGAR / SALTAR", ctrl: "DESCENDER"
 };
 
+/* Órdenes combinadas (dos teclas a la vez), como el control real de un
+   vehículo/dron: avanzar + turbo, girar + turbo, frenar + descender, etc. */
+const COMBOS = [
+  { keys: ["w","shift"], action: "IMPULSO ADELANTE (TURBO)" },
+  { keys: ["a","shift"], action: "GIRO RÁPIDO IZQUIERDA" },
+  { keys: ["d","shift"], action: "GIRO RÁPIDO DERECHA" },
+  { keys: ["s","ctrl"],  action: "FRENAR Y DESCENDER" },
+  { keys: ["w","space"], action: "DESPEGUE ACELERADO" },
+  { keys: ["a","ctrl"],  action: "DESCENDER GIRANDO IZQ." },
+  { keys: ["d","ctrl"],  action: "DESCENDER GIRANDO DER." }
+];
+const COMBO_CHANCE   = 0.32;   // probabilidad de orden doble tras el 4º objetivo
+const COMBO_MIN_HITS = 4;      // nº de objetivos simples antes de permitir combos
+
 /* ── ESTADO ──────────────────────────────────── */
 const state = {
   name: "",
@@ -68,6 +82,8 @@ const state = {
   keyHits: 0,
   keyMiss: 0,
   keyAcc: 0,
+  keyReactAvg: 0,
+  keyBestStreak: 0,
   multi: 0,
   total: 0
 };
@@ -77,11 +93,25 @@ const TOTAL_STEPS = 4;
 const STEP_NAMES  = ["Inicio","Preguntas","Control","Multitarea","Resultado"];
 
 let questionsDone = [];
-let keyTarget   = null;
-let keyTimer    = null;
-let keyTime     = 30;
-let keyRunning  = false;
+let keyTarget    = null;   // string (single) o array de 2 (combo)
+let keyIsCombo   = false;
+let keyTimer     = null;
+let keyTime      = 30;
+let keyRunning   = false;
 let kH = 0, kM = 0;
+let kTargetsShown = 0;
+let reactionTimes = [];
+let targetShownAt  = 0;
+let streak = 0, bestStreak = 0;
+let pressedSet = new Set();
+
+/* sonido */
+let soundOn = true;
+let audioCtx = null;
+
+/* almacenamiento local de la mejor marca */
+const STORAGE_KEY = "pylanor_best_v1";
+
 
 const ARC_LEN = 326.7; // 2π × 52
 
@@ -310,6 +340,19 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("nameInput").addEventListener("keydown", function(e) {
     if (e.key === "Enter") startQuiz();
   });
+
+  // preferencia de sonido guardada
+  try {
+    var pref = localStorage.getItem("pylanor_sound");
+    if (pref === "off") {
+      soundOn = false;
+      var btn = document.getElementById("soundToggle");
+      if (btn) { btn.textContent = "🔇"; btn.classList.add("muted"); }
+    }
+  } catch (e) {}
+
+  // mostrar mejor marca guardada, si existe
+  renderBestScorePanel();
 });
 
 /* ════════════════════════════════════════════════
@@ -381,16 +424,111 @@ function pickOption(qi, oi) {
 }
 
 /* ════════════════════════════════════════════════
+   SONIDO (Web Audio API) — feedback de aciertos/fallos
+════════════════════════════════════════════════ */
+function getAudioCtx() {
+  if (!audioCtx) {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  return audioCtx;
+}
+
+function playTone(freq, duration, type) {
+  if (!soundOn) return;
+  var ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume();
+  var osc  = ctx.createOscillator();
+  var gain = ctx.createGain();
+  osc.type = type || "sine";
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.16, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + duration);
+}
+
+function playHitSound(combo) {
+  playTone(combo ? 720 : 880, 0.09, "triangle");
+  if (combo) setTimeout(function() { playTone(1040, 0.1, "triangle"); }, 70);
+}
+function playMissSound() { playTone(160, 0.18, "sawtooth"); }
+
+function toggleSound() {
+  soundOn = !soundOn;
+  var btn = document.getElementById("soundToggle");
+  if (btn) {
+    btn.textContent = soundOn ? "🔊" : "🔇";
+    btn.classList.toggle("muted", !soundOn);
+  }
+  try { localStorage.setItem("pylanor_sound", soundOn ? "on" : "off"); } catch (e) {}
+}
+
+/* ════════════════════════════════════════════════
+   MEJOR MARCA (localStorage)
+════════════════════════════════════════════════ */
+function loadBestScore() {
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function saveBestScoreIfBetter(total, reactAvg) {
+  var best = loadBestScore();
+  var isNew = !best || total > best.total;
+  if (isNew) {
+    best = { total: total, reactAvg: reactAvg, streak: Math.max(bestStreak, best ? best.streak : 0) };
+  } else if (best) {
+    best.streak = Math.max(best.streak || 0, bestStreak);
+  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(best)); } catch (e) {}
+  return isNew;
+}
+
+function renderBestScorePanel() {
+  var best = loadBestScore();
+  var panel = document.getElementById("bestScorePanel");
+  if (!panel) return;
+  if (!best) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  document.getElementById("bestTotal").textContent  = best.total + "%";
+  document.getElementById("bestStreak").textContent = (best.streak || 0);
+  document.getElementById("bestReact").textContent  = best.reactAvg ? best.reactAvg + " ms" : "—";
+}
+
+/* ════════════════════════════════════════════════
+   HUD (indicadores del vehículo / dron)
+════════════════════════════════════════════════ */
+function flashHud(keys) {
+  keys.forEach(function(k) {
+    var icon = document.querySelector('.hud-icon[data-hud="' + k + '"]');
+    if (!icon) return;
+    icon.classList.add("lit");
+    setTimeout(function() { icon.classList.remove("lit"); }, 260);
+  });
+}
+
+/* ════════════════════════════════════════════════
    PASO 2 — CONTROL WASD (VEHÍCULOS / DRONES / ROBOTS)
    Acepta pulsaciones REALES de teclado (keydown) y,
    como alternativa táctil, clics en los botones.
+   Incluye órdenes combinadas (dos teclas a la vez),
+   racha de aciertos y tiempo de reacción promedio.
 ════════════════════════════════════════════════ */
 function initKeyTest() {
   kH = 0; kM = 0; keyTime = 30; keyRunning = true;
-  document.getElementById("kHits").textContent = "0";
-  document.getElementById("kMiss").textContent = "0";
-  document.getElementById("kAcc").textContent  = "—";
+  kTargetsShown = 0; reactionTimes = []; streak = 0; bestStreak = 0;
+  pressedSet.clear();
+  document.getElementById("kHits").textContent  = "0";
+  document.getElementById("kMiss").textContent  = "0";
+  document.getElementById("kAcc").textContent   = "—";
+  document.getElementById("kReact").textContent = "—";
   document.getElementById("keyDone").classList.add("hidden");
+  document.getElementById("streakBadge").classList.add("hidden");
+  document.getElementById("comboTag").classList.add("hidden");
   document.getElementById("timerArc").style.strokeDashoffset = "0";
   document.getElementById("timerArc").style.stroke = "url(#tg)";
   document.getElementById("timerNumber").textContent = "30";
@@ -400,23 +538,139 @@ function initKeyTest() {
 }
 
 function setNextKey() {
-  var next = keyTarget;
-  // evitar repetir la misma tecla dos veces seguidas
-  while (next === keyTarget) {
-    next = CONTROL_KEYS[Math.floor(Math.random() * CONTROL_KEYS.length)];
+  kTargetsShown++;
+  pressedSet.clear();
+  document.querySelectorAll(".key-btn").forEach(function(b) { b.classList.remove("pressed"); });
+
+  var useCombo = kTargetsShown > COMBO_MIN_HITS && Math.random() < COMBO_CHANCE;
+  var wrap    = document.getElementById("keyTargetWrap");
+  var nameEl  = document.getElementById("keyTargetName");
+  var comboEl = document.getElementById("comboTag");
+
+  if (useCombo) {
+    var c = COMBOS[Math.floor(Math.random() * COMBOS.length)];
+    keyTarget  = c.keys;
+    keyIsCombo = true;
+    wrap.innerHTML =
+      '<div class="target-emoji key-target-cap">' + KEY_CAP[c.keys[0]] + '</div>' +
+      '<div class="combo-plus">+</div>' +
+      '<div class="target-emoji key-target-cap">' + KEY_CAP[c.keys[1]] + '</div>';
+    nameEl.textContent = c.action;
+    comboEl.classList.remove("hidden");
+  } else {
+    var single = keyIsCombo ? null : keyTarget;
+    var next = single;
+    while (next === single || Array.isArray(next)) {
+      next = CONTROL_KEYS[Math.floor(Math.random() * CONTROL_KEYS.length)];
+    }
+    keyTarget  = next;
+    keyIsCombo = false;
+    wrap.innerHTML = '<div class="target-emoji key-target-cap">' + KEY_CAP[keyTarget] + '</div>';
+    nameEl.textContent = KEY_ACTION[keyTarget];
+    comboEl.classList.add("hidden");
   }
-  keyTarget = next;
-  var capEl  = document.getElementById("keyTarget");
-  var nameEl = document.getElementById("keyTargetName");
-  capEl.textContent = KEY_CAP[keyTarget];
-  nameEl.textContent = KEY_ACTION[keyTarget];
-  // reiniciar animación
-  capEl.style.animation = "none";
-  void capEl.offsetWidth;
-  capEl.style.animation = "";
+
+  targetShownAt = performance.now();
+  var capEls = wrap.querySelectorAll(".key-target-cap");
+  capEls.forEach(function(el) {
+    el.style.animation = "none";
+    void el.offsetWidth;
+    el.style.animation = "";
+  });
 }
 
-/* Normaliza el evento de teclado físico a uno de nuestros CONTROL_KEYS */
+function resolveHit() {
+  var reaction = Math.round(performance.now() - targetShownAt);
+  reactionTimes.push(reaction);
+  kH++;
+  streak++;
+  if (streak > bestStreak) bestStreak = streak;
+  var badge = document.getElementById("streakBadge");
+  if (streak >= 3) {
+    badge.classList.remove("hidden");
+    document.getElementById("streakCount").textContent = streak;
+  } else {
+    badge.classList.add("hidden");
+  }
+  playHitSound(keyIsCombo);
+  flashHud(keyIsCombo ? keyTarget : [keyTarget]);
+}
+
+function resolveMiss() {
+  kM++;
+  streak = 0;
+  document.getElementById("streakBadge").classList.add("hidden");
+  playMissSound();
+}
+
+function refreshStats() {
+  var total = kH + kM;
+  document.getElementById("kHits").textContent = kH;
+  document.getElementById("kMiss").textContent = kM;
+  document.getElementById("kAcc").textContent  = total ? Math.round(kH / total * 100) + "%" : "—";
+  if (reactionTimes.length) {
+    var avg = Math.round(reactionTimes.reduce(function(a, b) { return a + b; }, 0) / reactionTimes.length);
+    document.getElementById("kReact").textContent = avg + " ms";
+  }
+}
+
+function flashBtn(btn, ok) {
+  if (!btn) return;
+  btn.classList.remove("hit", "miss");
+  void btn.offsetWidth;
+  btn.classList.add(ok ? "hit" : "miss");
+  setTimeout(function() { btn.classList.remove(ok ? "hit" : "miss"); }, ok ? 300 : 350);
+}
+
+/* Procesa una pulsación (teclado físico o clic) para el modo de tecla única */
+function registerSingleKey(pressedKey) {
+  var btn = document.querySelector('.key-btn[data-key="' + pressedKey + '"]');
+  if (pressedKey === keyTarget) {
+    resolveHit();
+    flashBtn(btn, true);
+  } else {
+    resolveMiss();
+    flashBtn(btn, false);
+  }
+  refreshStats();
+  setNextKey();
+}
+
+/* Procesa una pulsación para el modo de orden combinada (dos teclas) */
+function registerComboKey(pressedKey) {
+  var btn = document.querySelector('.key-btn[data-key="' + pressedKey + '"]');
+  if (keyTarget.indexOf(pressedKey) === -1) {
+    resolveMiss();
+    flashBtn(btn, false);
+    refreshStats();
+    setNextKey();
+    return;
+  }
+  pressedSet.add(pressedKey);
+  btn && btn.classList.add("pressed");
+  var complete = keyTarget.every(function(k) { return pressedSet.has(k); });
+  if (complete) {
+    resolveHit();
+    keyTarget.forEach(function(k) {
+      flashBtn(document.querySelector('.key-btn[data-key="' + k + '"]'), true);
+    });
+    refreshStats();
+    setNextKey();
+  }
+}
+
+function registerKeyPress(pressedKey) {
+  if (!keyRunning) return;
+  if (keyIsCombo) registerComboKey(pressedKey);
+  else            registerSingleKey(pressedKey);
+}
+
+/* clic / toque en el botón en pantalla (fallback móvil) */
+function keyBtnClick(btn) {
+  registerKeyPress(btn.dataset.key);
+}
+
+/* pulsación real del teclado físico */
 function normalizeKeyEvent(e) {
   if (e.code === "Space") return "space";
   if (e.key === "Shift")   return "shift";
@@ -426,46 +680,22 @@ function normalizeKeyEvent(e) {
   return null;
 }
 
-function registerKeyPress(pressedKey, btnEl) {
-  if (!keyRunning) return;
-  var btn = btnEl || document.querySelector('.key-btn[data-key="' + pressedKey + '"]');
-  if (btn) {
-    btn.classList.remove("hit", "miss");
-    void btn.offsetWidth;
-  }
-  if (pressedKey === keyTarget) {
-    kH++;
-    if (btn) { btn.classList.add("hit"); setTimeout(function() { btn.classList.remove("hit"); }, 300); }
-  } else {
-    kM++;
-    if (btn) { btn.classList.add("miss"); setTimeout(function() { btn.classList.remove("miss"); }, 350); }
-  }
-  var total = kH + kM;
-  document.getElementById("kHits").textContent = kH;
-  document.getElementById("kMiss").textContent = kM;
-  document.getElementById("kAcc").textContent  = total ? Math.round(kH / total * 100) + "%" : "—";
-  setNextKey();
-}
-
-/* clic / toque en el botón en pantalla (fallback móvil) */
-function keyBtnClick(btn) {
-  registerKeyPress(btn.dataset.key, btn);
-}
-
-/* pulsación real del teclado físico */
 document.addEventListener("keydown", function(e) {
   if (!keyRunning || e.repeat) return;
   var k = normalizeKeyEvent(e);
   if (!k) return;
   // evita que Espacio haga scroll de la página durante el test
   if (k === "space") e.preventDefault();
-  var btn = document.querySelector('.key-btn[data-key="' + k + '"]');
-  if (btn) btn.classList.add("pressed");
-  registerKeyPress(k, btn);
+  if (!keyIsCombo) {
+    var btn = document.querySelector('.key-btn[data-key="' + k + '"]');
+    if (btn) btn.classList.add("pressed");
+  }
+  registerKeyPress(k);
 });
 document.addEventListener("keyup", function(e) {
   var k = normalizeKeyEvent(e);
   if (!k) return;
+  pressedSet.delete(k);
   var btn = document.querySelector('.key-btn[data-key="' + k + '"]');
   if (btn) btn.classList.remove("pressed");
 });
@@ -484,13 +714,20 @@ function endKeyTest() {
   clearInterval(keyTimer);
   keyRunning = false;
   document.querySelectorAll(".key-btn").forEach(function(b) { b.disabled = true; b.classList.remove("pressed"); });
-  document.getElementById("keyTarget").textContent     = "✅";
+  document.getElementById("keyTargetWrap").innerHTML = '<div class="target-emoji key-target-cap">✅</div>';
   document.getElementById("keyTargetName").textContent = "¡COMPLETADO!";
+  document.getElementById("comboTag").classList.add("hidden");
+  document.getElementById("streakBadge").classList.add("hidden");
   var total = kH + kM;
   var acc   = total ? Math.round(kH / total * 100) : 0;
-  state.keyHits = kH;
-  state.keyMiss = kM;
-  state.keyAcc  = acc;
+  var reactAvg = reactionTimes.length
+    ? Math.round(reactionTimes.reduce(function(a, b) { return a + b; }, 0) / reactionTimes.length)
+    : 0;
+  state.keyHits      = kH;
+  state.keyMiss      = kM;
+  state.keyAcc       = acc;
+  state.keyReactAvg  = reactAvg;
+  state.keyBestStreak = bestStreak;
   document.getElementById("kAcc").textContent = acc + "%";
   document.getElementById("keyDone").classList.remove("hidden");
 }
@@ -536,12 +773,15 @@ function buildResults() {
     }, 25);
   }, 400);
 
-  // nivel
-  var grade = "", color = "";
-  if      (total >= 90) { grade = "EXPERTO";      color = "#5DDBA6"; }
-  else if (total >= 70) { grade = "AVANZADO";     color = "#A8D8EA"; }
-  else if (total >= 50) { grade = "INTERMEDIO";   color = "#F5D06A"; }
-  else                  { grade = "PRINCIPIANTE"; color = "#F07878"; }
+  // nivel + medalla
+  var grade = "", color = "", medal = "";
+  if      (total >= 90) { grade = "EXPERTO";      color = "#5DDBA6"; medal = "🏆"; }
+  else if (total >= 70) { grade = "AVANZADO";     color = "#A8D8EA"; medal = "🥈"; }
+  else if (total >= 50) { grade = "INTERMEDIO";   color = "#F5D06A"; medal = "🥉"; }
+  else                  { grade = "PRINCIPIANTE"; color = "#F07878"; medal = "🔰"; }
+
+  var medalEl = document.getElementById("resultMedal");
+  if (medalEl) medalEl.textContent = medal;
 
   var gradeEl = document.getElementById("resultGrade");
   if (gradeEl) {
@@ -553,6 +793,11 @@ function buildResults() {
   var nameEl = document.getElementById("resultUsername");
   if (nameEl) nameEl.textContent = "— " + state.name + " —";
 
+  // guardar mejor marca localmente y mostrar insignia si es récord
+  var isNewRecord = saveBestScoreIfBetter(total, state.keyReactAvg);
+  var recordBadge = document.getElementById("newRecordBadge");
+  if (recordBadge) recordBadge.classList.toggle("hidden", !isNewRecord);
+
   var statsEl = document.getElementById("resultStats");
   if (statsEl) {
     statsEl.innerHTML = [
@@ -560,6 +805,8 @@ function buildResults() {
       '<div class="stat-card"><div class="stat-value">' + state.keyHits + '</div><div class="stat-label">Aciertos teclas</div></div>',
       '<div class="stat-card"><div class="stat-value">' + state.keyAcc + '%</div><div class="stat-label">Precisión</div></div>',
       '<div class="stat-card"><div class="stat-value">' + state.keyMiss + '</div><div class="stat-label">Fallos teclas</div></div>',
+      '<div class="stat-card"><div class="stat-value">' + (state.keyReactAvg || "—") + '</div><div class="stat-label">Reacción (ms)</div></div>',
+      '<div class="stat-card"><div class="stat-value">🔥 ' + state.keyBestStreak + '</div><div class="stat-label">Mejor racha</div></div>',
       '<div class="stat-card"><div class="stat-value">' + state.multi + '</div><div class="stat-label">Multitarea</div></div>',
       '<div class="stat-card"><div class="stat-value" style="color:#5DDBA6">' + total + '%</div><div class="stat-label">Total</div></div>'
     ].join("");
@@ -591,14 +838,16 @@ function saveToSheets() {
   }
 
   var payload = {
-    nombre:          state.name,
-    fecha:           new Date().toLocaleString("es-PE"),
-    preguntas:        state.qScore + "/" + QUESTIONS.length,
-    teclas_aciertos:  state.keyHits,
-    teclas_fallos:    state.keyMiss,
-    teclas_precision: state.keyAcc + "%",
-    multitarea:      state.multi,
-    total:           state.total + "%"
+    nombre:            state.name,
+    fecha:             new Date().toLocaleString("es-PE"),
+    preguntas:         state.qScore + "/" + QUESTIONS.length,
+    teclas_aciertos:   state.keyHits,
+    teclas_fallos:     state.keyMiss,
+    teclas_precision:  state.keyAcc + "%",
+    teclas_reaccion_ms: state.keyReactAvg,
+    teclas_racha_max:  state.keyBestStreak,
+    multitarea:        state.multi,
+    total:             state.total + "%"
   };
 
   fetch(SHEET_URL, {
@@ -624,18 +873,22 @@ function saveToSheets() {
    RESET COMPLETO
 ════════════════════════════════════════════════ */
 function resetAll() {
-  state.name     = "";
-  state.qScore   = 0;
-  state.keyHits  = 0;
-  state.keyMiss  = 0;
-  state.keyAcc   = 0;
-  state.multi    = 0;
-  state.total    = 0;
+  state.name         = "";
+  state.qScore       = 0;
+  state.keyHits      = 0;
+  state.keyMiss      = 0;
+  state.keyAcc       = 0;
+  state.keyReactAvg  = 0;
+  state.keyBestStreak = 0;
+  state.multi        = 0;
+  state.total        = 0;
 
   questionsDone = [];
   clearInterval(keyTimer);
   keyTime    = 30;
   keyRunning = false;
+  streak = 0; bestStreak = 0; reactionTimes = [];
+  pressedSet.clear();
 
   document.getElementById("nameInput").value      = "";
   document.getElementById("multiScoreInput").value = "";
@@ -648,7 +901,10 @@ function resetAll() {
   if (arcEl) arcEl.style.strokeDashoffset = "515";
   var pctEl = document.getElementById("resultPct");
   if (pctEl) pctEl.textContent = "0%";
+  var recordBadge = document.getElementById("newRecordBadge");
+  if (recordBadge) recordBadge.classList.add("hidden");
 
+  renderBestScorePanel();
   goStep(0);
   updateProgress(0);
 }
