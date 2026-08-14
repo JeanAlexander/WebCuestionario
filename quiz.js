@@ -50,30 +50,38 @@ const QUESTIONS = [
   }
 ];
 
-const FINGERS = ["meñique","anular","medio","indice","pulgar"];
-const F_EMOJI = { meñique:"🤙", anular:"💍", medio:"🖕", indice:"☝️", pulgar:"👍" };
+/* Teclas de control de vehículos / drones / robots: WASD + Shift + Ctrl + Espacio */
+const CONTROL_KEYS = ["w","a","s","d","shift","space","ctrl"];
+const KEY_CAP = {
+  w: "W", a: "A", s: "S", d: "D",
+  shift: "⇧ SHIFT", space: "␣ ESPACIO", ctrl: "⌃ CTRL"
+};
+const KEY_ACTION = {
+  w: "AVANZAR", a: "GIRAR IZQUIERDA", s: "RETROCEDER", d: "GIRAR DERECHA",
+  shift: "TURBO / ACELERAR", space: "DESPEGAR / SALTAR", ctrl: "DESCENDER"
+};
 
 /* ── ESTADO ──────────────────────────────────── */
 const state = {
   name: "",
   qScore: 0,
-  fingerHits: 0,
-  fingerMiss: 0,
-  fingerAcc: 0,
+  keyHits: 0,
+  keyMiss: 0,
+  keyAcc: 0,
   multi: 0,
   total: 0
 };
 
 let currentStep   = 0;
 const TOTAL_STEPS = 4;
-const STEP_NAMES  = ["Inicio","Preguntas","Dedos","Multitarea","Resultado"];
+const STEP_NAMES  = ["Inicio","Preguntas","Control","Multitarea","Resultado"];
 
 let questionsDone = [];
-let fingerTarget  = null;
-let fingerTimer   = null;
-let fingerTime    = 30;
-let fingerRunning = false;
-let fH = 0, fM = 0;
+let keyTarget   = null;
+let keyTimer    = null;
+let keyTime     = 30;
+let keyRunning  = false;
+let kH = 0, kM = 0;
 
 const ARC_LEN = 326.7; // 2π × 52
 
@@ -274,7 +282,7 @@ function goStep(n) {
   document.getElementById("step" + n).classList.add("active");
   updateProgress(n);
   window.scrollTo({ top: 0, behavior: "smooth" });
-  if (n === 2) initFingerTest();
+  if (n === 2) initKeyTest();
 }
 
 /* ════════════════════════════════════════════════
@@ -373,78 +381,118 @@ function pickOption(qi, oi) {
 }
 
 /* ════════════════════════════════════════════════
-   PASO 2 — TEST DE DEDOS
+   PASO 2 — CONTROL WASD (VEHÍCULOS / DRONES / ROBOTS)
+   Acepta pulsaciones REALES de teclado (keydown) y,
+   como alternativa táctil, clics en los botones.
 ════════════════════════════════════════════════ */
-function initFingerTest() {
-  fH = 0; fM = 0; fingerTime = 30; fingerRunning = true;
-  document.getElementById("fHits").textContent     = "0";
-  document.getElementById("fMiss").textContent     = "0";
-  document.getElementById("fAcc").textContent      = "—";
-  document.getElementById("fingerDone").classList.add("hidden");
+function initKeyTest() {
+  kH = 0; kM = 0; keyTime = 30; keyRunning = true;
+  document.getElementById("kHits").textContent = "0";
+  document.getElementById("kMiss").textContent = "0";
+  document.getElementById("kAcc").textContent  = "—";
+  document.getElementById("keyDone").classList.add("hidden");
   document.getElementById("timerArc").style.strokeDashoffset = "0";
   document.getElementById("timerArc").style.stroke = "url(#tg)";
   document.getElementById("timerNumber").textContent = "30";
-  document.querySelectorAll(".finger-btn").forEach(function(b) { b.disabled = false; });
-  setNextFinger();
-  fingerTimer = setInterval(tickTimer, 1000);
+  document.querySelectorAll(".key-btn").forEach(function(b) { b.disabled = false; });
+  setNextKey();
+  keyTimer = setInterval(tickTimer, 1000);
 }
 
-function setNextFinger() {
-  fingerTarget = FINGERS[Math.floor(Math.random() * FINGERS.length)];
-  var emojiEl = document.getElementById("fingerTarget");
-  var nameEl  = document.getElementById("fingerTargetName");
-  emojiEl.textContent = F_EMOJI[fingerTarget];
-  nameEl.textContent  = fingerTarget.toUpperCase();
-  // reiniciar animación
-  emojiEl.style.animation = "none";
-  void emojiEl.offsetWidth;
-  emojiEl.style.animation = "";
-}
-
-function fingerClick(btn) {
-  if (!fingerRunning) return;
-  var f = btn.dataset.finger;
-  btn.classList.remove("hit", "miss");
-  void btn.offsetWidth;
-  if (f === fingerTarget) {
-    fH++;
-    btn.classList.add("hit");
-    setTimeout(function() { btn.classList.remove("hit"); }, 300);
-  } else {
-    fM++;
-    btn.classList.add("miss");
-    setTimeout(function() { btn.classList.remove("miss"); }, 350);
+function setNextKey() {
+  var next = keyTarget;
+  // evitar repetir la misma tecla dos veces seguidas
+  while (next === keyTarget) {
+    next = CONTROL_KEYS[Math.floor(Math.random() * CONTROL_KEYS.length)];
   }
-  var total = fH + fM;
-  document.getElementById("fHits").textContent = fH;
-  document.getElementById("fMiss").textContent = fM;
-  document.getElementById("fAcc").textContent  = total ? Math.round(fH / total * 100) + "%" : "—";
-  setNextFinger();
+  keyTarget = next;
+  var capEl  = document.getElementById("keyTarget");
+  var nameEl = document.getElementById("keyTargetName");
+  capEl.textContent = KEY_CAP[keyTarget];
+  nameEl.textContent = KEY_ACTION[keyTarget];
+  // reiniciar animación
+  capEl.style.animation = "none";
+  void capEl.offsetWidth;
+  capEl.style.animation = "";
 }
+
+/* Normaliza el evento de teclado físico a uno de nuestros CONTROL_KEYS */
+function normalizeKeyEvent(e) {
+  if (e.code === "Space") return "space";
+  if (e.key === "Shift")   return "shift";
+  if (e.key === "Control") return "ctrl";
+  var k = (e.key || "").toLowerCase();
+  if (k === "w" || k === "a" || k === "s" || k === "d") return k;
+  return null;
+}
+
+function registerKeyPress(pressedKey, btnEl) {
+  if (!keyRunning) return;
+  var btn = btnEl || document.querySelector('.key-btn[data-key="' + pressedKey + '"]');
+  if (btn) {
+    btn.classList.remove("hit", "miss");
+    void btn.offsetWidth;
+  }
+  if (pressedKey === keyTarget) {
+    kH++;
+    if (btn) { btn.classList.add("hit"); setTimeout(function() { btn.classList.remove("hit"); }, 300); }
+  } else {
+    kM++;
+    if (btn) { btn.classList.add("miss"); setTimeout(function() { btn.classList.remove("miss"); }, 350); }
+  }
+  var total = kH + kM;
+  document.getElementById("kHits").textContent = kH;
+  document.getElementById("kMiss").textContent = kM;
+  document.getElementById("kAcc").textContent  = total ? Math.round(kH / total * 100) + "%" : "—";
+  setNextKey();
+}
+
+/* clic / toque en el botón en pantalla (fallback móvil) */
+function keyBtnClick(btn) {
+  registerKeyPress(btn.dataset.key, btn);
+}
+
+/* pulsación real del teclado físico */
+document.addEventListener("keydown", function(e) {
+  if (!keyRunning || e.repeat) return;
+  var k = normalizeKeyEvent(e);
+  if (!k) return;
+  // evita que Espacio haga scroll de la página durante el test
+  if (k === "space") e.preventDefault();
+  var btn = document.querySelector('.key-btn[data-key="' + k + '"]');
+  if (btn) btn.classList.add("pressed");
+  registerKeyPress(k, btn);
+});
+document.addEventListener("keyup", function(e) {
+  var k = normalizeKeyEvent(e);
+  if (!k) return;
+  var btn = document.querySelector('.key-btn[data-key="' + k + '"]');
+  if (btn) btn.classList.remove("pressed");
+});
 
 function tickTimer() {
-  fingerTime--;
-  document.getElementById("timerNumber").textContent = fingerTime;
-  var offset = ARC_LEN * (1 - fingerTime / 30);
+  keyTime--;
+  document.getElementById("timerNumber").textContent = keyTime;
+  var offset = ARC_LEN * (1 - keyTime / 30);
   document.getElementById("timerArc").style.strokeDashoffset = offset;
-  if (fingerTime <= 10)      document.getElementById("timerArc").style.stroke = "#F07878";
-  else if (fingerTime <= 20) document.getElementById("timerArc").style.stroke = "#F5D06A";
-  if (fingerTime <= 0) endFingerTest();
+  if (keyTime <= 10)      document.getElementById("timerArc").style.stroke = "#F07878";
+  else if (keyTime <= 20) document.getElementById("timerArc").style.stroke = "#F5D06A";
+  if (keyTime <= 0) endKeyTest();
 }
 
-function endFingerTest() {
-  clearInterval(fingerTimer);
-  fingerRunning = false;
-  document.querySelectorAll(".finger-btn").forEach(function(b) { b.disabled = true; });
-  document.getElementById("fingerTarget").textContent     = "✅";
-  document.getElementById("fingerTargetName").textContent = "¡COMPLETADO!";
-  var total = fH + fM;
-  var acc   = total ? Math.round(fH / total * 100) : 0;
-  state.fingerHits = fH;
-  state.fingerMiss = fM;
-  state.fingerAcc  = acc;
-  document.getElementById("fAcc").textContent = acc + "%";
-  document.getElementById("fingerDone").classList.remove("hidden");
+function endKeyTest() {
+  clearInterval(keyTimer);
+  keyRunning = false;
+  document.querySelectorAll(".key-btn").forEach(function(b) { b.disabled = true; b.classList.remove("pressed"); });
+  document.getElementById("keyTarget").textContent     = "✅";
+  document.getElementById("keyTargetName").textContent = "¡COMPLETADO!";
+  var total = kH + kM;
+  var acc   = total ? Math.round(kH / total * 100) : 0;
+  state.keyHits = kH;
+  state.keyMiss = kM;
+  state.keyAcc  = acc;
+  document.getElementById("kAcc").textContent = acc + "%";
+  document.getElementById("keyDone").classList.remove("hidden");
 }
 
 /* ════════════════════════════════════════════════
@@ -467,9 +515,9 @@ function submitMulti() {
 ════════════════════════════════════════════════ */
 function buildResults() {
   var qPct  = Math.round(state.qScore / QUESTIONS.length * 100);
-  var fPct  = state.fingerAcc;
+  var kPct  = state.keyAcc;
   var mPct  = Math.min(Math.round(state.multi / 200 * 100), 100);
-  var total = Math.round((qPct + fPct + mPct) / 3);
+  var total = Math.round((qPct + kPct + mPct) / 3);
   state.total = total;
 
   // animar anillo
@@ -509,9 +557,9 @@ function buildResults() {
   if (statsEl) {
     statsEl.innerHTML = [
       '<div class="stat-card"><div class="stat-value">' + state.qScore + "/" + QUESTIONS.length + '</div><div class="stat-label">Preguntas</div></div>',
-      '<div class="stat-card"><div class="stat-value">' + state.fingerHits + '</div><div class="stat-label">Aciertos dedos</div></div>',
-      '<div class="stat-card"><div class="stat-value">' + state.fingerAcc + '%</div><div class="stat-label">Precisión</div></div>',
-      '<div class="stat-card"><div class="stat-value">' + state.fingerMiss + '</div><div class="stat-label">Fallos dedos</div></div>',
+      '<div class="stat-card"><div class="stat-value">' + state.keyHits + '</div><div class="stat-label">Aciertos teclas</div></div>',
+      '<div class="stat-card"><div class="stat-value">' + state.keyAcc + '%</div><div class="stat-label">Precisión</div></div>',
+      '<div class="stat-card"><div class="stat-value">' + state.keyMiss + '</div><div class="stat-label">Fallos teclas</div></div>',
       '<div class="stat-card"><div class="stat-value">' + state.multi + '</div><div class="stat-label">Multitarea</div></div>',
       '<div class="stat-card"><div class="stat-value" style="color:#5DDBA6">' + total + '%</div><div class="stat-label">Total</div></div>'
     ].join("");
@@ -545,10 +593,10 @@ function saveToSheets() {
   var payload = {
     nombre:          state.name,
     fecha:           new Date().toLocaleString("es-PE"),
-    preguntas:       state.qScore + "/" + QUESTIONS.length,
-    dedos_aciertos:  state.fingerHits,
-    dedos_fallos:    state.fingerMiss,
-    dedos_precision: state.fingerAcc + "%",
+    preguntas:        state.qScore + "/" + QUESTIONS.length,
+    teclas_aciertos:  state.keyHits,
+    teclas_fallos:    state.keyMiss,
+    teclas_precision: state.keyAcc + "%",
     multitarea:      state.multi,
     total:           state.total + "%"
   };
@@ -576,18 +624,18 @@ function saveToSheets() {
    RESET COMPLETO
 ════════════════════════════════════════════════ */
 function resetAll() {
-  state.name        = "";
-  state.qScore      = 0;
-  state.fingerHits  = 0;
-  state.fingerMiss  = 0;
-  state.fingerAcc   = 0;
-  state.multi       = 0;
-  state.total       = 0;
+  state.name     = "";
+  state.qScore   = 0;
+  state.keyHits  = 0;
+  state.keyMiss  = 0;
+  state.keyAcc   = 0;
+  state.multi    = 0;
+  state.total    = 0;
 
   questionsDone = [];
-  clearInterval(fingerTimer);
-  fingerTime    = 30;
-  fingerRunning = false;
+  clearInterval(keyTimer);
+  keyTime    = 30;
+  keyRunning = false;
 
   document.getElementById("nameInput").value      = "";
   document.getElementById("multiScoreInput").value = "";
