@@ -1,4 +1,3 @@
-
 /* ── URL de Google Apps Script ──────────────────── */
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbzJeBCfC7O4KtWRYzooCUQxnunSG5N6MQFcpHMSQTJ-0Lq93KZguTtn8BzcR9RBj0LV/exec";
 
@@ -6,7 +5,9 @@ const SHEET_URL = "https://script.google.com/macros/s/AKfycbzJeBCfC7O4KtWRYzooCU
 /* Enfocadas en el tema real de la investigación: el dominio del esquema
    de control WASD + Shift + Ctrl + Espacio para el manejo de vehículos,
    drones y robots, y los factores humanos detrás del rendimiento con
-   el teclado (memoria muscular, tiempo de reacción, ergonomía, multitarea). */
+   el teclado (memoria muscular, tiempo de reacción, ergonomía, multitarea).
+   Redactadas como escenarios GENERALES, sin dar por hecho que la persona
+   ya pasó por el test de teclas (este cuestionario va ANTES de esa prueba). */
 const QUESTIONS = [
   {
     text: "El esquema W-A-S-D se convirtió en el estándar para controlar vehículos y personajes en simuladores y videojuegos. ¿Cuál es la razón principal, más allá de la costumbre?",
@@ -20,7 +21,7 @@ const QUESTIONS = [
     explanation: "El diseño ergonómico es la clave: con la mano izquierda apoyada en W-A-S-D, el meñique llega naturalmente a Shift y Ctrl, y el pulgar a la barra espaciadora, sin necesidad de desplazar la mano. Esto permite controlar movimiento, velocidad (turbo) y acciones (saltar/disparar) de forma simultánea, mientras la mano derecha queda libre para el mouse o para otros controles."
   },
   {
-    text: "En el control de un dron o vehículo remoto, el 'tiempo de reacción' es el intervalo entre que aparece un estímulo (por ejemplo, un obstáculo) y el momento en que el piloto presiona la tecla correcta. ¿Por qué esta métrica es relevante para evaluar el desempeño de una persona?",
+    text: "Un operador maneja un dron de forma remota usando el teclado. El 'tiempo de reacción' es el intervalo entre que aparece un obstáculo en pantalla y el momento en que presiona la tecla correcta para evitarlo. ¿Por qué esta métrica es tan relevante para evaluar su desempeño?",
     options: [
       "No tiene ninguna relevancia práctica, solo interesa a nivel teórico",
       "Porque un tiempo de reacción más corto generalmente indica mayor capacidad de respuesta ante imprevistos, algo crítico para evitar colisiones o errores de maniobra en tiempo real",
@@ -31,7 +32,7 @@ const QUESTIONS = [
     explanation: "Un tiempo de reacción corto refleja que la señal viaja rápido desde la percepción visual hasta la respuesta motora (el dedo presionando la tecla correcta). En control remoto de vehículos, drones o robots, esto se traduce directamente en menos margen de error ante obstáculos o cambios repentinos del entorno."
   },
   {
-    text: "Después de practicar repetidamente una combinación de teclas (por ejemplo, W + Shift para avanzar con turbo), muchas personas logran ejecutarla cada vez más rápido y sin mirar el teclado. ¿Cómo se conoce este fenómeno?",
+    text: "Un piloto de simulador practica repetidamente la misma combinación de teclas (por ejemplo, W + Shift para avanzar con turbo), hasta que logra ejecutarla cada vez más rápido y sin mirar el teclado. ¿Cómo se conoce este fenómeno?",
     options: [
       "Fatiga muscular, que reduce la precisión con la práctica",
       "Memoria muscular (o memoria motora): el sistema nervioso automatiza el movimiento repetido, haciéndolo más rápido y con menor esfuerzo consciente",
@@ -42,37 +43,37 @@ const QUESTIONS = [
     explanation: "La memoria muscular es la capacidad del sistema nervioso de automatizar secuencias de movimiento tras la repetición, reduciendo el tiempo de reacción y la carga cognitiva necesaria para ejecutarlas. Es la misma razón por la que un piloto experimentado o un gamer avanzado responde casi de forma instintiva ante ciertos estímulos."
   },
   {
-    text: "En una prueba de control como esta (donde a veces aparecen órdenes de una sola tecla y otras veces órdenes combinadas, como 'W + Shift'), ¿qué habilidad se está evaluando principalmente al pedir dos teclas simultáneas en lugar de una?",
+    text: "Al controlar un dron real, rara vez se usa una sola tecla a la vez: por ejemplo, avanzar y activar el turbo simultáneamente (W + Shift) es una acción común. ¿Qué habilidad se pone a prueba principalmente al tener que mantener presionadas dos teclas al mismo tiempo, en lugar de una sola?",
     options: [
       "La velocidad de escritura general de la persona (palabras por minuto)",
-      "La capacidad de coordinar ambas manos en distintas tareas al mismo tiempo",
-      "La coordinación motora fina para mantener presionadas varias teclas a la vez, algo equivalente a combinar dirección y velocidad (o altura) al mismo tiempo en un vehículo o dron real",
+      "La capacidad de coordinar ambas manos en tareas completamente distintas",
+      "La coordinación motora fina para sostener varias teclas a la vez, equivalente a combinar dirección y velocidad (o altitud) de forma simultánea en un vehículo o dron real",
       "La memoria a largo plazo de la persona"
     ],
     correct: 2,
     explanation: "Las órdenes combinadas simulan situaciones reales de control: un piloto de dron rara vez usa una sola entrada a la vez, sino que combina dirección, aceleración y altitud de forma simultánea. Presionar dos teclas al mismo tiempo (por ejemplo, avanzar + turbo) mide la coordinación motora fina necesaria para ese tipo de maniobras."
   },
   {
-    text: "Durante la prueba de control, un participante debe reaccionar a nuevas órdenes mientras aún recuerda las anteriores y mantiene la atención en el temporizador. ¿Qué concepto psicológico describe mejor esta situación?",
+    text: "Un operador de un robot debe vigilar el entorno en pantalla, recordar el estado de la batería y, al mismo tiempo, ejecutar los comandos de movimiento correctos según lo que va viendo. ¿Qué concepto psicológico describe mejor esta capacidad de atender varias cosas a la vez sin perder rendimiento?",
     options: [
-      "Memoria fotográfica, ya que se debe recordar exactamente cómo se veía cada orden anterior",
+      "Memoria fotográfica, ya que se debe recordar exactamente cómo se veía cada elemento en pantalla",
       "Atención dividida (o multitarea cognitiva): la capacidad de procesar y responder a varios estímulos o demandas de forma casi simultánea",
       "Visión periférica, que es un fenómeno exclusivamente físico y no cognitivo",
-      "Amnesia retrógrada, que ocurre naturalmente durante pruebas de reacción"
+      "Amnesia retrógrada, que ocurre naturalmente al operar bajo presión"
     ],
     correct: 1,
     explanation: "La atención dividida es la capacidad de gestionar varias fuentes de información o tareas a la vez sin que el rendimiento colapse. En el control de vehículos, drones o robots, el operador debe monitorear el entorno, el estado del equipo y ejecutar comandos al mismo tiempo, por lo que esta habilidad es determinante para un buen desempeño."
   },
   {
-    text: "Si una persona comete más errores (fallos) a medida que avanza el cronómetro de 30 segundos en la prueba de teclas, esto probablemente indica:",
+    text: "En sesiones largas de operación remota (por ejemplo, un piloto de dron que lleva varios minutos volando bajo presión de tiempo), es común observar que los errores de control aumentan con el paso del tiempo, incluso si la persona domina bien las teclas. ¿A qué se debe generalmente este patrón?",
     options: [
-      "Que el teclado se está dañando progresivamente durante la prueba",
-      "Fatiga o saturación cognitiva: el estrés de responder rápido bajo presión de tiempo reduce la precisión, un patrón común también en operadores reales de maquinaria o vehículos",
-      "Que la persona está mejorando su nivel de concentración con el paso del tiempo",
-      "Un error de programación en el cronómetro de la prueba"
+      "A que el equipo de control (teclado o mando) se va dañando progresivamente durante el uso",
+      "A la fatiga o saturación cognitiva: el estrés de responder rápido de forma sostenida reduce la precisión, un patrón común en operadores reales de maquinaria o vehículos",
+      "A que la persona mejora tanto su concentración que empieza a cometer errores a propósito",
+      "A un fallo típico del software de control, no de la persona"
     ],
     correct: 1,
-    explanation: "Es un patrón bien documentado en pruebas de reacción: la presión del tiempo puede generar fatiga cognitiva o ansiedad, aumentando los errores incluso si la persona domina las teclas. Este mismo fenómeno es relevante en el control real de vehículos, drones o robots, donde el estrés operativo puede afectar la precisión de las respuestas."
+    explanation: "Es un patrón bien documentado en tareas de control prolongado: el esfuerzo sostenido de reaccionar rápido puede generar fatiga cognitiva o ansiedad, aumentando los errores incluso si la persona domina las teclas. Este mismo fenómeno es relevante en el control real de vehículos, drones o robots, donde el estrés operativo puede afectar la precisión de las respuestas."
   }
 ];
 
