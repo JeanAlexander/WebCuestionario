@@ -100,7 +100,7 @@ const COMBOS = [
   { keys: ["a","ctrl"],  action: "DESCENDER GIRANDO IZQ." },
   { keys: ["d","ctrl"],  action: "DESCENDER GIRANDO DER." }
 ];
-const COMBO_CHANCE   = 0.32;   // probabilidad de orden doble tras el 4º objetivo
+const COMBO_CHANCE   = 0;   // probabilidad de orden doble tras el 4º objetivo
 const COMBO_MIN_HITS = 4;      // nº de objetivos simples antes de permitir combos
 
 /* ── ESTADO ──────────────────────────────────── */
